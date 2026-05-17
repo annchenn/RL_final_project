@@ -1,0 +1,18 @@
+env:
+  image_dir: "adjusted-images"           # pre-degraded images live here
+  image_size: 256
+  action_dim: 1
+  beta_range: [-50.0, 50.0]
+  episode_horizon: 1
+
+features:
+  type: "histograms"
+  intensity_bins: 64
+  gradient_bins: 64
+  scales: [1.0, 0.5, 0.25]
+
+reward:
+  metric: "topiq"
+  device: "cuda"
+
+seed: 42

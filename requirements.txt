@@ -1,0 +1,13 @@
+torch>=2.4
+torchvision>=0.19
+numpy
+opencv-python
+pillow
+pyiqa>=0.1.10
+gymnasium>=0.29
+stable-baselines3>=2.3
+tensorboard
+wandb
+pyyaml
+scikit-image
+matplotlib

@@ -1,0 +1,24 @@
+algo: "PPO"
+policy: "MlpPolicy"
+n_envs: 1
+n_steps: 128
+batch_size: 64
+n_epochs: 10
+learning_rate: 3.0e-4
+gamma: 0.99
+gae_lambda: 0.95
+clip_range: 0.2
+ent_coef: 0.01
+vf_coef: 0.5
+max_grad_norm: 0.5
+total_timesteps: 50000
+log_interval: 4
+save_freq: 5000
+log_dir: "runs/ppo_toy"
+wandb_project: "rl-photo-tune"
+
+# Periodic eval during training. Best-by-eval-reward checkpoint is saved as
+# ppo_best.zip; final-step model is saved as ppo_final.zip.
+eval_freq: 500            # eval every N timesteps
+n_eval_episodes: 20       # episodes per eval run
+eval_image_size: 256      # resize images for fast eval TOPIQ (null = full-res)
