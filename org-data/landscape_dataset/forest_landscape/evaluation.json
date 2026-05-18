@@ -1,0 +1,127 @@
+{
+  "input_dir": "org-data\\landscape_dataset\\forest_landscape",
+  "scores": [
+    {
+      "filename": "forest_landscape_0.jpg",
+      "score": 0.5180031657218933
+    },
+    {
+      "filename": "forest_landscape_1.jpg",
+      "score": 0.5474245548248291
+    },
+    {
+      "filename": "forest_landscape_10.jpg",
+      "score": 0.6699584126472473
+    },
+    {
+      "filename": "forest_landscape_11.jpg",
+      "score": 0.5648532509803772
+    },
+    {
+      "filename": "forest_landscape_12.jpg",
+      "score": 0.5330408811569214
+    },
+    {
+      "filename": "forest_landscape_13.jpg",
+      "score": 0.6528928875923157
+    },
+    {
+      "filename": "forest_landscape_14.jpg",
+      "score": 0.6626174449920654
+    },
+    {
+      "filename": "forest_landscape_15.jpg",
+      "score": 0.4700221121311188
+    },
+    {
+      "filename": "forest_landscape_16.jpg",
+      "score": 0.5088602304458618
+    },
+    {
+      "filename": "forest_landscape_17.jpg",
+      "score": 0.6123985648155212
+    },
+    {
+      "filename": "forest_landscape_18.jpg",
+      "score": 0.5490456819534302
+    },
+    {
+      "filename": "forest_landscape_19.jpg",
+      "score": 0.6431028246879578
+    },
+    {
+      "filename": "forest_landscape_2.jpg",
+      "score": 0.6657343506813049
+    },
+    {
+      "filename": "forest_landscape_20.jpg",
+      "score": 0.5403385758399963
+    },
+    {
+      "filename": "forest_landscape_21.jpg",
+      "score": 0.7295581102371216
+    },
+    {
+      "filename": "forest_landscape_22.jpg",
+      "score": 0.7148237228393555
+    },
+    {
+      "filename": "forest_landscape_23.jpg",
+      "score": 0.5724555253982544
+    },
+    {
+      "filename": "forest_landscape_24.jpg",
+      "score": 0.5498152375221252
+    },
+    {
+      "filename": "forest_landscape_25.jpg",
+      "score": 0.5861673951148987
+    },
+    {
+      "filename": "forest_landscape_26.jpg",
+      "score": 0.6907615065574646
+    },
+    {
+      "filename": "forest_landscape_27.jpg",
+      "score": 0.5106431245803833
+    },
+    {
+      "filename": "forest_landscape_28.jpg",
+      "score": 0.7059406638145447
+    },
+    {
+      "filename": "forest_landscape_29.jpg",
+      "score": 0.5500134825706482
+    },
+    {
+      "filename": "forest_landscape_3.jpg",
+      "score": 0.5030789971351624
+    },
+    {
+      "filename": "forest_landscape_4.jpg",
+      "score": 0.625295102596283
+    },
+    {
+      "filename": "forest_landscape_5.jpg",
+      "score": 0.5534287095069885
+    },
+    {
+      "filename": "forest_landscape_6.jpg",
+      "score": 0.5695151686668396
+    },
+    {
+      "filename": "forest_landscape_7.jpg",
+      "score": 0.6009591221809387
+    },
+    {
+      "filename": "forest_landscape_8.jpg",
+      "score": 0.37688323855400085
+    },
+    {
+      "filename": "forest_landscape_9.jpg",
+      "score": 0.6398553252220154
+    }
+  ],
+  "average_score": 0.5872495790322622,
+  "num_images": 30
+}
