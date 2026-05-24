@@ -1,13 +1,31 @@
 [project]
 name = "rl-final-project"
 version = "0.1.0"
-description = "Add your description here"
+description = "RL for scenic photo parameter tuning with TOPIQ reward"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    # data / images
     "datasets>=4.8.5",
     "huggingface-hub>=1.13.0",
     "numpy>=2.4.4",
     "opencv-python>=4.13.0.92",
     "pillow>=12.2.0",
+    "scikit-image",
+    # rl stack
+    "gymnasium>=0.29",
+    "stable-baselines3>=2.3",
+    # reward / vision backbones
+    "torch>=2.4",
+    "torchvision>=0.19",
+    "pyiqa>=0.1.10",
+    # config / logging / plotting
+    "pyyaml",
+    "wandb",
+    "matplotlib",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
 ]

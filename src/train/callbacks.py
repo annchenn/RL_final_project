@@ -66,3 +66,31 @@ class WandbRewardCallback(BaseCallback):
     def _on_training_end(self) -> None:
         if self.enabled and self._wandb is not None:
             self._wandb.finish()
+
+
+class WandbEvalCallback(BaseCallback):
+    """Pushes EvalCallback results to wandb after each in-loop evaluation.
+
+    Wire as `EvalCallback(..., callback_after_eval=WandbEvalCallback(wandb_cb))`.
+    Reads `self.parent.last_mean_reward` (SB3 sets `parent` on the child callback
+    when constructing EvalCallback) so we get the freshly-computed eval reward
+    instead of polling stale state.
+    """
+
+    def __init__(self, wandb_cb: "WandbRewardCallback", verbose: int = 0):
+        super().__init__(verbose)
+        self.wandb_cb = wandb_cb
+
+    def _on_step(self) -> bool:
+        if not self.wandb_cb.enabled or self.wandb_cb._wandb is None:
+            return True
+        ec = self.parent  # the EvalCallback that owns us
+        self.wandb_cb._wandb.log(
+            {
+                "eval/mean_reward": float(ec.last_mean_reward),
+                "eval/best_mean_reward": float(ec.best_mean_reward),
+                "eval/timesteps": self.num_timesteps,
+            },
+            step=self.num_timesteps,
+        )
+        return True

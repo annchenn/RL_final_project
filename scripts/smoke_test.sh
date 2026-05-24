@@ -6,12 +6,16 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+SMOKE_DIR="runs/ppo_smoke"
+rm -rf "${SMOKE_DIR}"
+
 python -m src.train.train_ppo \
   --env-config configs/toy_v0.yaml \
   --ppo-config configs/ppo_default.yaml \
   --total-steps 256 \
   --no-wandb \
-  --run-name ppo_smoke
+  --run-name ppo_smoke \
+  --log-dir "${SMOKE_DIR}"
 
 python -m src.eval.run_eval \
   --policy identity \
@@ -21,7 +25,7 @@ python -m src.eval.run_eval \
 
 python -m src.eval.run_eval \
   --policy ppo \
-  --ckpt runs/ppo_toy/ppo_best.zip \
+  --ckpt "${SMOKE_DIR}/best_model.zip" \
   --env-config configs/toy_v0.yaml \
   --out /tmp/ppo_smoke.csv \
   --n-episodes 5
