@@ -1,7 +1,9 @@
 """Read result CSVs and produce plots for the milestone-2 report.
 
 Expects each method's CSV to follow the schema produced by src.eval.run_eval:
-    episode, image_idx, beta_pred, score_before, score_after, reward
+    episode, image_idx, n_steps,
+    alpha_mean, beta_mean, delta_s_mean, gamma_mean,
+    score_before, score_after, reward
 
 Usage:
     python -m src.eval.report_plots \\
@@ -15,6 +17,15 @@ from typing import Dict, List
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+
+ACTION_KEYS = ("alpha_mean", "beta_mean", "delta_s_mean", "gamma_mean")
+ACTION_LABELS = {
+    "alpha_mean": "contrast (alpha)",
+    "beta_mean": "brightness (beta)",
+    "delta_s_mean": "saturation (delta_s)",
+    "gamma_mean": "gamma",
+}
 
 
 def _read_csv(path: Path) -> List[dict]:
@@ -36,7 +47,7 @@ def bar_chart_mean_reward(method_rows: Dict[str, List[dict]], out_path: Path) ->
     ax.bar(xs, means, yerr=stds, capsize=5, color="#4C72B0", alpha=0.85)
     ax.set_xticks(xs)
     ax.set_xticklabels(methods, rotation=15)
-    ax.set_ylabel("Mean TOPIQ delta (reward)")
+    ax.set_ylabel("Mean scaled TOPIQ delta (reward)")
     ax.set_title("Per-method mean reward on toy eval split")
     ax.axhline(0.0, color="k", linewidth=0.5)
     fig.tight_layout()
@@ -44,16 +55,19 @@ def bar_chart_mean_reward(method_rows: Dict[str, List[dict]], out_path: Path) ->
     plt.close(fig)
 
 
-def beta_pred_histogram(method_rows: Dict[str, List[dict]], out_path: Path) -> None:
-    """How does each method distribute its predicted beta? Useful sanity figure."""
-    fig, ax = plt.subplots(figsize=(6, 4))
-    for m, rows in method_rows.items():
-        beta = _to_floats(rows, "beta_pred")
-        ax.hist(beta, bins=30, alpha=0.5, label=m, density=True)
-    ax.set_xlabel("predicted beta")
-    ax.set_ylabel("density")
-    ax.set_title("Predicted beta distribution across methods")
-    ax.legend()
+def action_histograms(method_rows: Dict[str, List[dict]], out_path: Path) -> None:
+    """One subplot per action dimension; per-episode mean action across methods."""
+    fig, axes = plt.subplots(2, 2, figsize=(10, 7))
+    for ax, key in zip(axes.ravel(), ACTION_KEYS):
+        for m, rows in method_rows.items():
+            if key not in rows[0]:
+                continue
+            vals = _to_floats(rows, key)
+            ax.hist(vals, bins=30, alpha=0.5, label=m, density=True)
+        ax.set_xlabel(ACTION_LABELS[key])
+        ax.set_ylabel("density")
+        ax.legend(fontsize=8)
+    fig.suptitle("Per-episode mean action across methods")
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
@@ -82,7 +96,7 @@ def main():
     method_rows: Dict[str, List[dict]] = {n: _read_csv(p) for n, p in csv_paths.items()}
 
     bar_chart_mean_reward(method_rows, out_dir / "mean_reward_bar.png")
-    beta_pred_histogram(method_rows, out_dir / "beta_pred_hist.png")
+    action_histograms(method_rows, out_dir / "action_hist.png")
     print(f"[report_plots] wrote figures to {out_dir}")
 
 

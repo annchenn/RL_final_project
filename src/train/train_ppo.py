@@ -1,6 +1,5 @@
 import argparse
 import os
-import shutil
 from pathlib import Path
 
 import yaml
@@ -12,7 +11,11 @@ import yaml
 _WANDB_HOME = Path.home() / ".cache" / "wandb-rl-final"
 _WANDB_HOME.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("WANDB_DIR", str(_WANDB_HOME))
-from stable_baselines3.common.callbacks import CallbackList, EvalCallback
+from stable_baselines3.common.callbacks import (
+    CallbackList,
+    CheckpointCallback,
+    EvalCallback,
+)
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 
@@ -22,7 +25,7 @@ from src.core.seeding import set_global_seed
 from src.env.image_dataset import ImageDirDataset
 from src.env.photo_env import PhotoTuneEnv
 from src.features.histograms import HistogramFeatureExtractor
-from src.train.callbacks import WandbRewardCallback
+from src.train.callbacks import WandbEvalCallback, WandbRewardCallback
 
 
 def parse_args():
@@ -35,30 +38,40 @@ def parse_args():
     p.add_argument(
         "--log-dir",
         default=None,
-        help="Override ppo_cfg['log_dir']. Use to keep separate runs from overwriting each other.",
-    )
-    p.add_argument(
-        "--full-res",
-        action="store_true",
-        help="Train and in-loop eval on full-resolution images (no dataset resize). "
-             "Heavy: TOPIQ runs on full-res. Default off.",
+        help="Override ppo_cfg['log_dir']. scripts/run_ppo.sh always passes a timestamped path.",
     )
     return p.parse_args()
 
 
-def make_env_fn(env_cfg: dict, image_size: int | None = None, reward_fn=None):
+def make_env_fn(env_cfg: dict, reward_fn=None):
     def _make():
-        dataset = ImageDirDataset(env_cfg["env"]["image_dir"], image_size=image_size)
+        dataset = ImageDirDataset(env_cfg["env"]["image_dir"])
         fx = HistogramFeatureExtractor(
             intensity_bins=env_cfg["features"]["intensity_bins"],
             gradient_bins=env_cfg["features"]["gradient_bins"],
             scales=tuple(env_cfg["features"]["scales"]),
         )
-        rfn = reward_fn if reward_fn is not None else TopiqReward(device=env_cfg["reward"]["device"])
+        rfn = reward_fn if reward_fn is not None else TopiqReward(
+            device=env_cfg["reward"]["device"],
+            scale=float(env_cfg["reward"].get("scale", 1.0)),
+        )
         env = PhotoTuneEnv(env_cfg, dataset, fx, rfn)
         return Monitor(env)  # SB3 reads ep_info from Monitor
 
     return _make
+
+
+def _update_latest_symlink(log_dir: Path) -> None:
+    """Maintain `<log_dir.parent>/latest` symlink pointing at this run so
+    eval.sh can find the most recent run without globbing."""
+    link = log_dir.parent / "latest"
+    try:
+        if link.is_symlink() or link.exists():
+            link.unlink()
+        link.symlink_to(log_dir.name, target_is_directory=True)
+    except OSError as e:
+        # NFS or Windows may refuse symlinks; not worth crashing training over.
+        print(f"[train_ppo] WARN: could not update latest symlink ({e})")
 
 
 def main():
@@ -70,17 +83,17 @@ def main():
 
     log_dir = Path(args.log_dir) if args.log_dir else Path(ppo_cfg["log_dir"])
     log_dir.mkdir(parents=True, exist_ok=True)
+    ckpt_dir = log_dir / "checkpoints"
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     # One TOPIQ model on GPU, shared between training and eval envs to avoid OOM.
-    shared_reward = TopiqReward(device=env_cfg["reward"]["device"])
+    shared_reward = TopiqReward(
+        device=env_cfg["reward"]["device"],
+        scale=float(env_cfg["reward"].get("scale", 1.0)),
+    )
 
-    # Training uses resized images (full-res TOPIQ is too heavy when other GPU
-    # jobs are running). Final post-training eval (scripts/eval.sh) reports
-    # full-res numbers via run_eval.py, which builds its own full-res dataset.
-    # Pass --full-res to force full-resolution training instead.
-    train_image_size = None if args.full_res else int(env_cfg["env"]["image_size"])
     model, vec = make_ppo(
-        make_env_fn(env_cfg, image_size=train_image_size, reward_fn=shared_reward),
+        make_env_fn(env_cfg, reward_fn=shared_reward),
         ppo_cfg,
     )
 
@@ -91,9 +104,8 @@ def main():
         enabled=not args.no_wandb,
     )
 
-    eval_image_size = None if args.full_res else ppo_cfg.get("eval_image_size", None)
     eval_env = DummyVecEnv(
-        [make_env_fn(env_cfg, image_size=eval_image_size, reward_fn=shared_reward)]
+        [make_env_fn(env_cfg, reward_fn=shared_reward)]
     )
     eval_cb = EvalCallback(
         eval_env,
@@ -102,28 +114,33 @@ def main():
         eval_freq=int(ppo_cfg.get("eval_freq", 500)),
         n_eval_episodes=int(ppo_cfg.get("n_eval_episodes", 20)),
         deterministic=True,
+        callback_after_eval=WandbEvalCallback(wandb_cb),
         verbose=1,
+    )
+
+    ckpt_cb = CheckpointCallback(
+        save_freq=int(ppo_cfg.get("save_freq", 5000)),
+        save_path=str(ckpt_dir),
+        name_prefix="ppo",
     )
 
     total = int(args.total_steps if args.total_steps is not None else ppo_cfg["total_timesteps"])
     model.learn(
         total_timesteps=total,
-        callback=CallbackList([wandb_cb, eval_cb]),
+        callback=CallbackList([wandb_cb, eval_cb, ckpt_cb]),
         log_interval=int(ppo_cfg["log_interval"]),
     )
 
-    # EvalCallback saves the best-by-eval-reward model as best_model.zip.
-    # Promote it to ppo_best.zip (the canonical name) and save the final
-    # post-training weights separately as ppo_final.zip for reference.
-    best_eval_zip = log_dir / "best_model.zip"
-    if best_eval_zip.exists():
-        shutil.copy(best_eval_zip, log_dir / "ppo_best.zip")
-        model.save(str(log_dir / "ppo_final"))
-        print(f"[train_ppo] best-by-eval checkpoint -> {log_dir / 'ppo_best.zip'}")
-        print(f"[train_ppo] final checkpoint        -> {log_dir / 'ppo_final.zip'}")
-    else:
-        model.save(str(log_dir / "ppo_best"))
-        print(f"[train_ppo] saved checkpoint to {log_dir / 'ppo_best.zip'} (no eval ran)")
+    # EvalCallback writes the best-by-eval-reward weights to <log_dir>/best_model.zip
+    # whenever a new high is reached during training. Save the final-step weights
+    # separately so reports can compare best-eval vs end-of-training behavior.
+    final_path = log_dir / "final_model.zip"
+    model.save(str(final_path))
+    print(f"[train_ppo] best-by-eval -> {log_dir / 'best_model.zip'}")
+    print(f"[train_ppo] final-step   -> {final_path}")
+    print(f"[train_ppo] intermediate -> {ckpt_dir}/")
+
+    _update_latest_symlink(log_dir)
 
     eval_env.close()
     vec.close()

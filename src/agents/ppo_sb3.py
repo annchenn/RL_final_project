@@ -18,6 +18,8 @@ def make_ppo(env_fn: Callable[[], "object"], cfg: dict) -> Tuple[PPO, VecEnv]:
     else:
         vec = DummyVecEnv([env_fn])
 
+    # tensorboard_log intentionally omitted: we use wandb only. Re-enable by
+    # passing tensorboard_log=cfg.get("log_dir") if you want SB3's TB writer back.
     model = PPO(
         cfg.get("policy", "MlpPolicy"),
         vec,
@@ -31,7 +33,6 @@ def make_ppo(env_fn: Callable[[], "object"], cfg: dict) -> Tuple[PPO, VecEnv]:
         ent_coef=float(cfg["ent_coef"]),
         vf_coef=float(cfg["vf_coef"]),
         max_grad_norm=float(cfg["max_grad_norm"]),
-        tensorboard_log=cfg.get("log_dir"),
         verbose=1,
     )
     return model, vec

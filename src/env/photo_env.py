@@ -3,17 +3,23 @@ import numpy as np
 from gymnasium import spaces
 
 from src.core.transforms import apply_action
-from src.env.image_dataset import ImageDirDataset
 
 
 class PhotoTuneEnv(gym.Env):
-    """Single-step bandit env: dataset images are already degraded.
+    """Multi-step env for photo parameter tuning.
 
     reset()  -> obs (features of degraded image)
-    step(a)  -> obs', reward = TOPIQ(image after action) - TOPIQ(degraded image)
+    step(a)  -> obs', reward = TOPIQ(image after action) - TOPIQ(image before action)
+
+    Action is 4-D continuous `[alpha, beta, delta_s, gamma]`. Each step applies
+    the action to the *current* image, so over `episode_horizon` steps the
+    effects accumulate (contrast/gamma multiplicatively, brightness/saturation
+    additively).
     """
 
     metadata = {"render_modes": []}
+
+    ACTION_KEYS = ("alpha", "beta", "delta_s", "gamma")
 
     def __init__(self, cfg, dataset, feature_extractor, reward_fn):
         super().__init__()
@@ -22,17 +28,26 @@ class PhotoTuneEnv(gym.Env):
         self.fx = feature_extractor
         self.reward_fn = reward_fn
 
-        # TOPIQ runs on the full-resolution image; features are computed on a
-        # downsized copy (shape stable, fast histograms). cfg["env"]["image_size"]
-        # is the feature-input size, not a global resize knob.
-        self.feature_size = int(cfg["env"]["image_size"])
-
-        beta_lo, beta_hi = cfg["env"]["beta_range"]
-        self.action_space = spaces.Box(
-            low=np.array([beta_lo], dtype=np.float32),
-            high=np.array([beta_hi], dtype=np.float32),
+        env_cfg = cfg["env"]
+        lows = np.array(
+            [
+                env_cfg["alpha_range"][0],
+                env_cfg["beta_range"][0],
+                env_cfg["delta_s_range"][0],
+                env_cfg["gamma_range"][0],
+            ],
             dtype=np.float32,
         )
+        highs = np.array(
+            [
+                env_cfg["alpha_range"][1],
+                env_cfg["beta_range"][1],
+                env_cfg["delta_s_range"][1],
+                env_cfg["gamma_range"][1],
+            ],
+            dtype=np.float32,
+        )
+        self.action_space = spaces.Box(low=lows, high=highs, dtype=np.float32)
         self.observation_space = spaces.Box(
             low=0.0, high=1.0, shape=(self.fx.dim,), dtype=np.float32
         )
@@ -43,8 +58,7 @@ class PhotoTuneEnv(gym.Env):
         self._cur_score: float | None = None
 
     def _features(self, img: np.ndarray) -> np.ndarray:
-        small = ImageDirDataset._resize_and_crop(img, self.feature_size)
-        return self.fx(small).astype(np.float32)
+        return self.fx(img).astype(np.float32)
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
@@ -78,10 +92,13 @@ class PhotoTuneEnv(gym.Env):
         info = {
             "score_after": new_score,
             "score_before": self._cur_score,
-            "action_beta": float(action_np[0]),
+            "action_alpha": float(action_np[0]),
+            "action_beta": float(action_np[1]),
+            "action_delta_s": float(action_np[2]),
+            "action_gamma": float(action_np[3]),
         }
 
-        # Cache for any subsequent step within the same episode (T>1 future use).
+        # Cache for the next step within the same episode.
         self._cur_img = new_img
         self._cur_score = new_score
 

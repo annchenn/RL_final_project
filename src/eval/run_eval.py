@@ -4,10 +4,14 @@ Usage:
     python -m src.eval.run_eval --policy identity --env-config configs/toy_v0.yaml --out results/identity.csv
     python -m src.eval.run_eval --policy ppo --ckpt runs/ppo_toy/ppo_best.zip --env-config configs/toy_v0.yaml --out results/ppo.csv
 
-Baselines lookup table is intentionally minimal — full baseline implementations
+Baselines lookup table is intentionally minimal -- full baseline implementations
 live under src/baselines/ and are owned by the team member working on baselines.
 This file just provides the eval harness + a couple of trivial reference policies
 (identity, random) so the harness is self-contained and testable.
+
+One row per episode. Each episode runs the env for `episode_horizon` steps and
+accumulates the per-step actions; the CSV reports the per-dimension mean action
+and the total reward (= final TOPIQ - initial TOPIQ since reward is delta).
 """
 import argparse
 import csv
@@ -20,6 +24,7 @@ import yaml
 
 from src.core.reward import TopiqReward
 from src.core.seeding import set_global_seed
+from src.core.transforms import NEUTRAL_ACTION
 from src.env.image_dataset import ImageDirDataset
 from src.env.photo_env import PhotoTuneEnv
 from src.features.histograms import HistogramFeatureExtractor
@@ -28,13 +33,13 @@ PolicyFn = Callable[[np.ndarray], np.ndarray]
 
 
 def _identity_policy(env: PhotoTuneEnv) -> PolicyFn:
-    return lambda obs: np.zeros((1,), dtype=np.float32)
+    return lambda obs: NEUTRAL_ACTION.copy()
 
 
 def _random_policy(env: PhotoTuneEnv, rng: np.random.Generator) -> PolicyFn:
-    lo = float(env.action_space.low[0])
-    hi = float(env.action_space.high[0])
-    return lambda obs: np.array([rng.uniform(lo, hi)], dtype=np.float32)
+    low = env.action_space.low.astype(np.float32)
+    high = env.action_space.high.astype(np.float32)
+    return lambda obs: rng.uniform(low, high).astype(np.float32)
 
 
 def _ppo_policy(ckpt_path: str) -> PolicyFn:
@@ -56,8 +61,47 @@ def build_env(env_cfg: dict) -> PhotoTuneEnv:
         gradient_bins=env_cfg["features"]["gradient_bins"],
         scales=tuple(env_cfg["features"]["scales"]),
     )
-    reward_fn = TopiqReward(device=env_cfg["reward"]["device"])
+    reward_fn = TopiqReward(
+        device=env_cfg["reward"]["device"],
+        scale=float(env_cfg["reward"].get("scale", 1.0)),
+    )
     return PhotoTuneEnv(env_cfg, dataset, fx, reward_fn)
+
+
+def _run_episode(env: PhotoTuneEnv, policy_fn: PolicyFn, seed: int,
+                 reset_opts: Optional[dict]) -> dict:
+    """Run one episode, returning per-episode aggregates and the final image."""
+    obs, info = env.reset(seed=seed, options=reset_opts)
+    before_img = env._cur_img.copy()
+    score_before = info["score_before"]
+
+    actions: List[np.ndarray] = []
+    total_reward = 0.0
+    score_after = score_before
+    terminated = False
+    truncated = False
+    while not (terminated or truncated):
+        a = policy_fn(obs)
+        obs, r, terminated, truncated, step_info = env.step(a)
+        actions.append(np.asarray(a, dtype=np.float32).reshape(-1))
+        total_reward += float(r)
+        score_after = step_info["score_after"]
+
+    action_stack = np.stack(actions, axis=0)
+    mean_action = action_stack.mean(axis=0)
+    return {
+        "image_idx": info["image_idx"],
+        "n_steps": len(actions),
+        "alpha_mean": float(mean_action[0]),
+        "beta_mean": float(mean_action[1]),
+        "delta_s_mean": float(mean_action[2]),
+        "gamma_mean": float(mean_action[3]),
+        "score_before": float(score_before),
+        "score_after": float(score_after),
+        "reward": total_reward,
+        "_before_img": before_img,
+        "_after_img": env._cur_img,
+    }
 
 
 def eval_policy(
@@ -73,23 +117,14 @@ def eval_policy(
     rows: List[dict] = []
     for ep in range(n):
         reset_opts = {"image_idx": fixed_indices[ep]} if fixed_indices is not None else None
-        obs, info = env.reset(seed=seed + ep, options=reset_opts)
-        before_img = env._cur_img.copy()
-        action = policy_fn(obs)
-        _, reward, _, _, step_info = env.step(action)
+        ep_data = _run_episode(env, policy_fn, seed=seed + ep, reset_opts=reset_opts)
 
-        row = {
-            "episode": ep,
-            "image_idx": info["image_idx"],
-            "beta_pred": step_info["action_beta"],
-            "score_before": step_info["score_before"],
-            "score_after": step_info["score_after"],
-            "reward": reward,
-        }
+        before_img = ep_data.pop("_before_img")
+        after_img = ep_data.pop("_after_img")
+        row = {"episode": ep, **ep_data}
         rows.append(row)
 
         if qual_dir is not None and ep < qual_count:
-            after_img = env._cur_img
             grid = np.concatenate([before_img, after_img], axis=1)
             grid_bgr = cv2.cvtColor(grid, cv2.COLOR_RGB2BGR)
             cv2.imwrite(str(qual_dir / f"ep{ep:03d}.png"), grid_bgr)

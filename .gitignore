@@ -1,7 +1,18 @@
+# Python
 .venv/
 venv/
 __pycache__/
+*.pyc
+.pytest_cache/
 
+# Training / eval outputs
+runs/
+results/
+wandb/
+
+# Logs
+*.log
+
+# Course materials (kept locally, not in git)
 Lecture 0 Logistics Updated Feb 25 2026.pdf
 proposal.pdf
-.pytest_cache/

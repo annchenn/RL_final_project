@@ -1,9 +1,15 @@
 env:
-  image_dir: "adjusted-images"           # pre-degraded images live here
-  image_size: 256
-  action_dim: 1
-  beta_range: [-50.0, 50.0]
-  episode_horizon: 1
+  image_dir: "degraded-data/landscape-50-4dim"           # pre-degraded images live here
+  action_dim: 4
+  # Per-step ranges. With episode_horizon=5 the per-step effects accumulate:
+  # contrast/gamma multiplicatively (0.85^5 ~ 0.44, 1.15^5 ~ 2.01) -> close to
+  # the proposal's [0.5, 2.0]. Brightness/saturation accumulate additively
+  # (5 * +/-10 = +/-50) -> close to the proposal's [-50, 50].
+  alpha_range:    [0.85, 1.15]   # contrast
+  beta_range:     [-10.0, 10.0]  # brightness
+  delta_s_range:  [-10.0, 10.0]  # saturation (HSV S channel)
+  gamma_range:    [0.85, 1.15]   # gamma
+  episode_horizon: 5
 
 features:
   type: "histograms"
@@ -14,5 +20,11 @@ features:
 reward:
   metric: "topiq"
   device: "cuda"
+  # Multiply every TOPIQ score (and therefore every reward / score_before /
+  # score_after value) by this constant. Raw TOPIQ deltas live in ~[-0.1, +0.05]
+  # which makes value targets tiny; *100 brings them into ~[-10, +5]. All
+  # downstream metrics (wandb panels, eval CSV, eval.sh stdout) are in scaled
+  # units -- divide by `scale` if you need raw TOPIQ for cross-paper comparison.
+  scale: 100.0
 
 seed: 42

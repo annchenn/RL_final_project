@@ -2,14 +2,20 @@
 # Eval PPO checkpoint deterministically over every image in the eval dataset
 # (one episode per image) and print Input/Output/Improvement TOPIQ for the
 # "Our RL Model" row.
-# Override the checkpoint with: CKPT=path/to/ckpt.zip bash scripts/eval.sh
+#
+# Defaults to the best-by-eval checkpoint of the most recent training run:
+#   runs/latest/best_model.zip
+# Override with CKPT=path/to/ckpt.zip bash scripts/eval.sh
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-TIMESTAMP="tmp"
-CKPT="runs/ppo_toy/ppo_final.zip"
+
+CKPT="${CKPT:-runs/latest/best_model.zip}"
 ENV_CFG="configs/toy_v0.yaml"
-RESULT_DIR="results/${TIMESTAMP}"
+# Tag results dir by the run name (or "manual" if user supplied CKPT directly).
+RUN_NAME="$(basename "$(dirname "$(readlink -f "${CKPT}" 2>/dev/null || echo "${CKPT}")")" 2>/dev/null || echo "manual")"
+CKPT_TAG="$(basename "${CKPT}" .zip)"
+RESULT_DIR="results/${RUN_NAME}/${CKPT_TAG}"
 OUT="${RESULT_DIR}/ppo_eval.csv"
 
 if [ ! -f "${CKPT}" ]; then
@@ -21,6 +27,7 @@ fi
 mkdir -p "${RESULT_DIR}"
 
 echo "[eval] PPO checkpoint: ${CKPT}"
+echo "[eval] results dir:    ${RESULT_DIR}"
 python -m src.eval.run_eval \
   --policy ppo \
   --ckpt "${CKPT}" \
@@ -37,8 +44,8 @@ df = pd.read_csv(sys.argv[1])
 inp = df["score_before"].mean()
 out = df["score_after"].mean()
 print()
-print(f"=== Our RL Model (n={len(df)} images) ===")
-print(f"Input TOPIQ:   {inp:.4f}")
-print(f"Output TOPIQ:  {out:.4f}")
-print(f"Improvement:   {out - inp:+.4f}")
+print(f"=== Our RL Model (n={len(df)} images, scaled units) ===")
+print(f"Input TOPIQ*scale:   {inp:.4f}")
+print(f"Output TOPIQ*scale:  {out:.4f}")
+print(f"Improvement:         {out - inp:+.4f}")
 EOF
