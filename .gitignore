@@ -7,8 +7,9 @@ __pycache__/
 
 # Training / eval outputs
 runs/
-results/
+results*/
 wandb/
+outputs/
 
 # Logs
 *.log
