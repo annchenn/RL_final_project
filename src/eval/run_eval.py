@@ -54,8 +54,11 @@ def _ppo_policy(ckpt_path: str) -> PolicyFn:
     return _act
 
 
-def build_env(env_cfg: dict) -> PhotoTuneEnv:
-    dataset = ImageDirDataset(env_cfg["env"]["image_dir"])
+def build_env(env_cfg: dict, image_dir: Optional[str] = None) -> PhotoTuneEnv:
+    """Build the eval env. `image_dir` overrides env_cfg['env']['image_dir'] so
+    callers can point the same config at a held-out test split without editing yaml.
+    """
+    dataset = ImageDirDataset(image_dir or env_cfg["env"]["image_dir"])
     fx = HistogramFeatureExtractor(
         intensity_bins=env_cfg["features"]["intensity_bins"],
         gradient_bins=env_cfg["features"]["gradient_bins"],
@@ -112,6 +115,7 @@ def eval_policy(
     qual_dir: Optional[Path] = None,
     qual_count: int = 5,
     fixed_indices: Optional[List[int]] = None,
+    save_enhanced_dir: Optional[Path] = None,
 ) -> List[dict]:
     n = len(fixed_indices) if fixed_indices is not None else n_episodes
     rows: List[dict] = []
@@ -128,6 +132,15 @@ def eval_policy(
             grid = np.concatenate([before_img, after_img], axis=1)
             grid_bgr = cv2.cvtColor(grid, cv2.COLOR_RGB2BGR)
             cv2.imwrite(str(qual_dir / f"ep{ep:03d}.png"), grid_bgr)
+
+        if save_enhanced_dir is not None:
+            # Save as PNG (lossless) so re-scoring the saved file matches the
+            # in-memory TOPIQ. JPG would introduce ~0.005 raw TOPIQ drift due to
+            # DCT quantization and chroma subsampling -- small visually, but
+            # TOPIQ is built to notice exactly that.
+            stem = env.dataset.paths[ep_data["image_idx"]].stem
+            after_bgr = cv2.cvtColor(after_img, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(str(save_enhanced_dir / f"{stem}.png"), after_bgr)
     return rows
 
 
@@ -152,6 +165,19 @@ def parse_args():
     p.add_argument("--seed", type=int, default=1000)
     p.add_argument("--qual-dir", default=None)
     p.add_argument(
+        "--image-dir",
+        default=None,
+        help="Override env_cfg.env.image_dir without editing the yaml. Use to "
+             "point the same config at a held-out test split.",
+    )
+    p.add_argument(
+        "--save-enhanced-dir",
+        default=None,
+        help="If set, write the final (after-policy) image of every episode as "
+             "<original_filename> into this dir. Downstream evaluation.py can "
+             "then re-score it.",
+    )
+    p.add_argument(
         "--all-images",
         action="store_true",
         help="Sweep the full dataset deterministically, one episode per image (overrides --n-episodes).",
@@ -164,7 +190,7 @@ def main():
     env_cfg = yaml.safe_load(open(args.env_config))
     set_global_seed(int(env_cfg.get("seed", 42)))
 
-    env = build_env(env_cfg)
+    env = build_env(env_cfg, image_dir=args.image_dir)
 
     if args.policy == "identity":
         policy = _identity_policy(env)
@@ -181,6 +207,10 @@ def main():
     if qual_dir is not None:
         qual_dir.mkdir(parents=True, exist_ok=True)
 
+    save_enhanced_dir = Path(args.save_enhanced_dir) if args.save_enhanced_dir else None
+    if save_enhanced_dir is not None:
+        save_enhanced_dir.mkdir(parents=True, exist_ok=True)
+
     fixed_indices = list(range(len(env.dataset))) if args.all_images else None
 
     rows = eval_policy(
@@ -190,6 +220,7 @@ def main():
         seed=int(args.seed),
         qual_dir=qual_dir,
         fixed_indices=fixed_indices,
+        save_enhanced_dir=save_enhanced_dir,
     )
     write_csv(rows, Path(args.out))
 
